@@ -277,7 +277,7 @@ endif
 
 #-------------------------- Additional Libraries ------------------------------
 
-SYSLIBS = $(EXT_LIB) -lpthread
+SYSLIBS = $(EXT_LIB) -lpthread $(BUILDARGS)
 ifeq ($(SFCN),0)
 SYSLIBS += -lm
 endif
