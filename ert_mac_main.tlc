@@ -31,6 +31,7 @@
     #include <stdbool.h>
     #include <unistd.h>
     #include <sys/mman.h>                  // For mlockall()
+    #include <csignal>
     #include "%<modelName>.h"              // Model's header file
     #include "rtwtypes.h"                  // MathWorks types
     %if extMode == 1
@@ -63,6 +64,12 @@
     #define POS(line) __FILE__ ":" STRINGIZE(line)
     #define CHECK0(expr) do { int __err = (expr); if (__err) { fprintf(stderr, "Error: %s returned '%s' at " POS(__LINE__) "\n", #expr, strerror(__err)); exit(1); } } while (0);
     #define CHECKE(expr) do { if ((expr) == -1) { perror(#expr " at " POS(__LINE__)); exit(1); } } while (0);
+
+    // Signal handler for ABORT during simulation
+    void abortHandler(int sig) {
+        fprintf(stderr, "Simulation aborted by pressing CTRL+C\n");
+        rtmSetStopRequested(%<modelName>_M, 1);
+    }
 
     //!
     //! Thread handle of the base rate thread.
@@ -266,6 +273,8 @@
 
         %if extMode == 1
         // External mode
+        signal(SIGINT, abortHandler); // important for letting the destructor be called.
+
         rtExtModeParseArgs(argc, argv, NULL);
         if ((ext_mode_ready = sem_open("/semaphore_ext_mode", O_CREAT, 0644, 1)) == SEM_FAILED) {
             perror("sem_open at " POS(__LINE__));
@@ -292,26 +301,37 @@
 
         // Starting loop %<i> thread for sample time = %<s>s, offset = %<o>s.
         CHECK0(pthread_create(&sub_rate[%<i>].thread, NULL, sub_rate%<i>, (void*)%<i>));
-
         %endforeach
 
         // Starting the base rate thread
         CHECK0(pthread_create(&base_rate_thread, NULL, base_rate, NULL));
 
-        fprintf(stderr,"Waiting for base thread!\n");
-        while(ext_mode_ready == 0){
-            usleep(%<FEVAL("uint32", fundamentalStepSize * 1000000)>);
-        }
-
         %if extMode == 1
           // External mode 
           CHECKE(sem_wait(ext_mode_ready));
+
           while(rtmGetErrorStatus(%<modelName>_M) == NULL && !rtmGetStopRequested(%<modelName>_M)) {
             rtExtModeOneStep(rtmGetRTWExtModeInfo(RT_MDL), NUMST, (boolean_T *)&rtmGetStopRequested(RT_MDL));
             usleep(%<FEVAL("uint32", fundamentalStepSize * 1000000)>);
           }
         %endif
-    
+
+        // Wait for threads to finish
+        pthread_join(base_rate_thread, NULL); 
+        %foreach i = numSampleTimes
+          %if i == 0 || i == 1 && tid01Eq
+        %continue
+          %endif
+        pthread_join(sub_rate[%<i>].thread, NULL);
+        %endforeach
+
+        %if extMode == 1
+          rtExtModeShutdown(%<numSampleTimes>);
+        %endif
+
+        // Terminate model
+        %<modelName>_terminate();
+
         // close semaphores
         %foreach i = numSampleTimes
           %if i == 0 || i == 1 && tid01Eq
@@ -337,22 +357,6 @@
             perror("sem_unlink");
             exit(EXIT_FAILURE);
         }
-
-        // Wait for threads to finish 
-        pthread_join(base_rate_thread, NULL);
-        %foreach i = numSampleTimes
-          %if i == 0 || i == 1 && tid01Eq
-        %continue
-          %endif
-        pthread_join(sub_rate[%<i>].thread, NULL);
-        %endforeach
-
-        %if extMode == 1
-          rtExtModeShutdown(%<numSampleTimes>);
-        %endif
-
-        // Terminate model
-        %<modelName>_terminate();
 
         errStatus = rtmGetErrorStatus(%<modelName>_M);
         if(errStatus != NULL && strcmp(errStatus, "Simulation finished")) {
@@ -392,7 +396,8 @@
             return -1;
         }
 
-        fprintf(stderr, "Entered Mach real-time scheduling class\n");
+        fprintf(stderr, "Entered Mach real-time scheduling class with Tcomp = %3.0f ms and Tcons = %3.0f ms\n",
+                Tcomputation, Tconstraint);
 
         return 0;
     }
