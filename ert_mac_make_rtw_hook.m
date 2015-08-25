@@ -13,7 +13,7 @@ function ert_mac_make_rtw_hook(hookMethod,modelName,rtwroot,templateMakefile,bui
     % do nothing
    case 'before_make'
     % do nothing
-    set_param(modelName, 'InitFcn', 'run runtarget');
+    set_param(modelName, 'StartFcn', 'run runtarget');
    case 'after_make'
     % do nothing
 	if (~isempty(strfind(buildArgs, 'arm-linux-gnueabihf-gcc')))
