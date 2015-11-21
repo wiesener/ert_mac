@@ -14,3 +14,8 @@ the semaphore synchronization.
 Inside the lintarget there are several settings and code constructs which prevent
 the embedded coder of generating C++ code. This is now possible with the 
 ert_mac target.
+
+Compared to the simulink desktop realtime the ert_mac target makes it possible to use
+your own custom drivers with all available operating system functions and aswell in C++.
+Hence if there is no support for your USB device or whatever device you could just
+implement a block using standard operating system calls.
