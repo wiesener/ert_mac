@@ -309,12 +309,13 @@
         %if extMode == 1
           // External mode 
           CHECKE(sem_wait(ext_mode_ready));
-
           while(rtmGetErrorStatus(%<modelName>_M) == NULL && !rtmGetStopRequested(%<modelName>_M)) {
             rtExtModeOneStep(rtmGetRTWExtModeInfo(RT_MDL), NUMST, (boolean_T *)&rtmGetStopRequested(RT_MDL));
             usleep(%<FEVAL("uint32", fundamentalStepSize * 1000000)>);
           }
         %endif
+        
+        fprintf(stderr,"ERROR %s\n", rtmGetErrorStatus(%<modelName>_M));
 
         // Wait for threads to finish
         pthread_join(base_rate_thread, NULL); 
@@ -347,7 +348,8 @@
             exit(EXIT_FAILURE);
         }
         %endforeach
-
+        
+        %if extMode == 1
         if (sem_close(ext_mode_ready) == -1) {
             perror("sem_close");
             exit(EXIT_FAILURE);
@@ -357,6 +359,7 @@
             perror("sem_unlink");
             exit(EXIT_FAILURE);
         }
+        %endif
 
         errStatus = rtmGetErrorStatus(%<modelName>_M);
         if(errStatus != NULL && strcmp(errStatus, "Simulation finished")) {
