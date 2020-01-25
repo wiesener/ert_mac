@@ -13,6 +13,14 @@
 %% GENERATEDECLARATIONS
 %%  This function generates main function declarations.
 %%
+%function DisableGenerateExampleMain() void
+  
+  %if GenerateSampleERTMain
+    %assign ::CompiledModel.GenerateSampleERTMain = TLC_FALSE
+    %warning Overriding example ert_main.c!
+  %endif
+
+%endfunction
 
 %assign ::tid01Eq = LibGetTID01EQ()
 
@@ -121,7 +129,7 @@
         %assign comp = FEVAL("double", 0.5 * sampleTime%<i> * 1000.0)
         %assign const = FEVAL("double", comp * 2)
         // set thread to zero period with a computation cost of %<comp> ms and a constraint of %<const> ms
-        move_pthread_to_realtime_scheduling_class(%<comp>, %<const>);
+        move_pthread_to_realtime_scheduling_class(1.0, 2.0);
 
         while(!simulationFinished) {
             sem_wait(sub_rate[%<i>].sem);    // sem_val = 1
@@ -152,8 +160,8 @@
         %assign comp = FEVAL("double", 0.5 * fundamentalStepSize * 1000.0)
         %assign const = FEVAL("double", comp * 2)
         // set thread to zero period with a computation cost of %<comp> ms and a constraint of %<const> ms
-        move_pthread_to_realtime_scheduling_class(%<comp>, %<const>);
-        //fprintf(stderr, "Computation %f ms Constraints %f \n", %<comp>, %<const>);
+        move_pthread_to_realtime_scheduling_class(1.0, 2.0);
+        //fprintf(stderr, "Computation %f ms Constraints %f \n", 1.0, 2.0);
         uint64_t next, now = 0;
         uint64_t period =  1000000000ULL * %<fundamentalStepSize>; // %<fundamentalStepSize> seconds
         boolean_T eventFlags[%<numSampleTimes>];             // Model has %<numSampleTimes> rates
@@ -310,7 +318,7 @@
           // External mode 
           CHECKE(sem_wait(ext_mode_ready));
           while(rtmGetErrorStatus(%<modelName>_M) == NULL && !rtmGetStopRequested(%<modelName>_M)) {
-            rtExtModeOneStep(rtmGetRTWExtModeInfo(RT_MDL), NUMST, (boolean_T *)&rtmGetStopRequested(RT_MDL));
+            rtExtModeOneStep(%<modelName>_M->extModeInfo, NUMST, (boolean_T *)&rtmGetStopRequested(RT_MDL));
             usleep(%<FEVAL("uint32", fundamentalStepSize * 1000000)>);
           }
         %endif
@@ -398,6 +406,7 @@
 
             return -1;
         }
+
 
         fprintf(stderr, "Entered Mach real-time scheduling class with Tcomp = %3.0f ms and Tcons = %3.0f ms\n",
                 Tcomputation, Tconstraint);
