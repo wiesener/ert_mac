@@ -1,0 +1,35 @@
+%selectfile NULL_FILE
+
+%assign ert_mainC = LibCreateSourceFile("Source", "Custom", "ert_main")
+
+
+%assign ::modelName = CompiledModel.Name
+%assign ::solverMode = CompiledModel.FixedStepOpts.SolverMode
+%assign ::fundamentalStepSize = CompiledModel.FundamentalStepSize
+%assign ::numSampleTimes = CompiledModel.NumSynchronousSampleTimes
+%assign ::extMode = CompiledModel.ConfigSet.ExtMode
+
+%% parse sample times and offsets
+%assign j = 0
+%foreach i = CompiledModel.NumSampleTimes
+    %if CompiledModel.SampleTime[i].Asynchronous == "no"
+        %assign ::sampleTime%<j> = CompiledModel.SampleTime[i].PeriodAndOffset[0]
+        %assign ::offset%<j> = CompiledModel.SampleTime[i].PeriodAndOffset[1]
+        %assign j = j+1
+    %endif
+%endforeach
+
+%include "ert_mac_main.tlc"
+
+%<DisableGenerateExampleMain()>
+
+%openfile buff
+%<generateDeclarations()>
+%closefile buff
+%<LibSetSourceFileSection(ert_mainC, "Declarations", buff)>
+
+%openfile buff
+%<generateRtOneStep()>
+%<generateMain()>
+%closefile buff
+%<LibSetSourceFileSection(ert_mainC, "Functions", buff)>
