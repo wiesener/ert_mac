@@ -1,0 +1,47 @@
+%%
+%% mac_ert_target_generate_main.tlc
+%%
+%% description:
+%%  TLC script which generates ert_main function according
+%%  to the number of model tasks and bitrates.
+%%
+%% date: 2nd Feb 2009
+%%
+%% author: Constantin Wiesener
+%% e-mail: wiesener@control.tu-berlin.de
+%% Department of Control Systemes
+%% Faculty of Electrical Engineering
+%% TU Berlin
+%%
+
+%assign ert_mainC = LibCreateSourceFile("Source", "Custom", "ert_main")
+
+%assign ::modelName = CompiledModel.Name
+%assign ::solverMode = CompiledModel.FixedStepOpts.SolverMode
+%assign ::fundamentalStepSize = CompiledModel.FundamentalStepSize
+%assign ::numSampleTimes = CompiledModel.NumSynchronousSampleTimes
+%assign ::extMode = CompiledModel.ConfigSet.ExtMode
+
+%% parse sample times and offsets
+%assign j = 0
+%foreach i = CompiledModel.NumSampleTimes
+    %if CompiledModel.SampleTime[i].Asynchronous == "no"
+        %assign ::sampleTime%<j> = CompiledModel.SampleTime[i].PeriodAndOffset[0]
+        %assign ::offset%<j> = CompiledModel.SampleTime[i].PeriodAndOffset[1]
+        %assign j = j+1
+    %endif
+%endforeach
+
+%% Generate ert_main.c
+%include "ert_mac_main.tlc"
+
+%openfile buff
+%<generateDeclarations()>
+%closefile buff
+%<LibSetSourceFileSection(ert_mainC, "Declarations", buff)>
+
+%openfile buff
+%<generateRtOneStep()>
+%<generateMain()>
+%closefile buff
+%<LibSetSourceFileSection(ert_mainC, "Functions", buff)>
