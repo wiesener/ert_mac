@@ -51,7 +51,7 @@ function ert_mac_select_callback_handler(varargin)
       slConfigUISetVal(hDlg, hSrc.Components, 'ExtMode', 'on');
       slConfigUISetEnabled(hDlg, hSrc.Components, 'ExtMode', 1);
 %      slConfigUISetEnabled(hDlg, hSrc, 'GRTInterface',0); 
-%      slConfigUISetVal(hDlg, hSrc.Components, 'ExtModeTransport', 'tcpip');
+%       slConfigUISetVal(hDlg, hSrc.Components, 'ExtModeTransport', 'tcpip');
 %     slConfigUISetVal(hDlg, hSrc, 'GenerateErtSFunction', 'off');
 %     slConfigUISetEnabled(hDlg, hSrc, 'GenerateErtSFunction', false);
 %     slConfigUISetVal(hDlg, hSrc, 'MatFileLogging', 'off');

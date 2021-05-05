@@ -34,7 +34,7 @@
     #include <mach/mach_init.h>
     #include <mach/mach_time.h>
     #include <mach/thread_policy.h>
-    #include <semaphore.h>
+    #include <dispatch/dispatch.h>
     #include <stdlib.h>
     #include <stdbool.h>
     #include <unistd.h>
@@ -98,7 +98,8 @@
      %endforeach  
     struct sub_rate {
     pthread_t thread;
-    sem_t*     sem;
+    bool is_running;
+    dispatch_semaphore_t sem;
     } sub_rate[%<numSampleTimes>];
     
     //! Prototype for realtime scheduling setting function
@@ -110,7 +111,7 @@
 
     %if extMode == 1
     //! Indication that the base rate thread has started
-    sem_t* ext_mode_ready;    
+    dispatch_semaphore_t ext_mode_ready;    
     %endif
 %endfunction
 
@@ -132,11 +133,13 @@
         move_pthread_to_realtime_scheduling_class(1.0, 2.0);
 
         while(!simulationFinished) {
-            sem_wait(sub_rate[%<i>].sem);    // sem_val = 1
+            dispatch_semaphore_wait(sub_rate[%<i>].sem, DISPATCH_TIME_FOREVER);    // sem_val = 1
             %<printfunc()>
             // fprintf(stderr, "Subrate %<i> executed\n");
+            sub_rate[%<i>].is_running = true;
             %<modelName>_step%<i>();
-            sem_wait(sub_rate[%<i>].sem);    // sem_val = 0
+            sub_rate[%<i>].is_running = false;
+
         }
         return NULL;
     }
@@ -167,12 +170,11 @@
         boolean_T eventFlags[%<numSampleTimes>];             // Model has %<numSampleTimes> rates
         uint32_T taskCounter[%<numSampleTimes>] = %<FcnInitializeTaskCounter()>;
         int_T OverrunFlags[%<numSampleTimes>];
-        int step_sem_value;
         int_T i;
 
         %if extMode == 1
           %<SLibGenERTExtModeInit()>
-          CHECKE(sem_post(ext_mode_ready));
+          dispatch_semaphore_signal(ext_mode_ready);
         %endif
 
         //! get current CPU tick
@@ -216,14 +218,13 @@
         // Sampling rate %<i>, sample time = %<s>, offset = %<o>
         if (eventFlags[%<i>]) {
           eventFlags[%<i>] = FALSE;
-          sem_getvalue(sub_rate[%<i>].sem, &step_sem_value);
-          if (step_sem_value) {
+
+          if (sub_rate[%<i>].is_running) {
             rtmSetErrorStatus(%<modelName>_M, "Overrun");
             printf("Sub rate %<i> overrun, sample time=%<s>s, offset=%<o>s is too fast\n");
             break;
           }
-          sem_post(sub_rate[%<i>].sem);
-          sem_post(sub_rate[%<i>].sem);
+          dispatch_semaphore_signal(sub_rate[%<i>].sem);
         }
           %endforeach
 
@@ -264,8 +265,7 @@
         simulationFinished = 1;
         // Final step for sub rate step functions
         for (i = %<1 + tid01Eq>; i < %<numSampleTimes>; i++) {
-          sem_post(sub_rate[i].sem);
-          sem_post(sub_rate[i].sem);
+          dispatch_semaphore_signal(sub_rate[i].sem);
         }
         return 0;
     }
@@ -284,10 +284,8 @@
         signal(SIGINT, abortHandler); // important for letting the destructor be called.
 
         rtExtModeParseArgs(argc, argv, NULL);
-        if ((ext_mode_ready = sem_open("/semaphore_ext_mode", O_CREAT, 0644, 1)) == SEM_FAILED) {
-            perror("sem_open at " POS(__LINE__));
-            exit(EXIT_FAILURE);
-        }
+        ext_mode_ready = dispatch_semaphore_create(1);
+
         %else
         (void)(argc);
         (void *)(argv);
@@ -302,10 +300,7 @@
                 %continue
             %endif
         // Initializing the step semaphore of the loop %<i> */
-        if ((sub_rate[%<i>].sem = sem_open("/semaphore%<i>", O_CREAT, 0644, 1)) == SEM_FAILED) {
-            perror("sem_open at " POS(__LINE__));
-            exit(EXIT_FAILURE);
-        }
+        sub_rate[%<i>].sem = dispatch_semaphore_create(1); // init with value of 1
 
         // Starting loop %<i> thread for sample time = %<s>s, offset = %<o>s.
         CHECK0(pthread_create(&sub_rate[%<i>].thread, NULL, sub_rate%<i>, (void*)%<i>));
@@ -315,15 +310,16 @@
         CHECK0(pthread_create(&base_rate_thread, NULL, base_rate, NULL));
 
         %if extMode == 1
-          // External mode 
-          CHECKE(sem_wait(ext_mode_ready));
-          while(rtmGetErrorStatus(%<modelName>_M) == NULL && !rtmGetStopRequested(%<modelName>_M)) {
+        // External mode
+        dispatch_semaphore_wait(ext_mode_ready, DISPATCH_TIME_FOREVER);
+        while(rtmGetErrorStatus(%<modelName>_M) == NULL && !rtmGetStopRequested(%<modelName>_M)) {
             rtExtModeOneStep(%<modelName>_M->extModeInfo, NUMST, (boolean_T *)&rtmGetStopRequested(RT_MDL));
             usleep(%<FEVAL("uint32", fundamentalStepSize * 1000000)>);
-          }
+        }
         %endif
-        
-        fprintf(stderr,"ERROR %s\n", rtmGetErrorStatus(%<modelName>_M));
+        if (rtmGetErrorStatus(%<modelName>_M) != NULL){
+            fprintf(stderr,"ERROR %s\n", rtmGetErrorStatus(%<modelName>_M));
+        }
 
         // Wait for threads to finish
         pthread_join(base_rate_thread, NULL); 
@@ -346,27 +342,11 @@
           %if i == 0 || i == 1 && tid01Eq
         %continue
           %endif
-        if (sem_close(sub_rate[%<i>].sem) == -1) {
-            perror("sem_close");
-            exit(EXIT_FAILURE);
-        }
-
-        if (sem_unlink("/semaphore%<i>") == -1) {
-            perror("sem_unlink");
-            exit(EXIT_FAILURE);
-        }
+        dispatch_release(sub_rate[%<i>].sem);
         %endforeach
         
         %if extMode == 1
-        if (sem_close(ext_mode_ready) == -1) {
-            perror("sem_close");
-            exit(EXIT_FAILURE);
-        }
-
-        if (sem_unlink("/semaphore_ext_mode") == -1) {
-            perror("sem_unlink");
-            exit(EXIT_FAILURE);
-        }
+        dispatch_release(ext_mode_ready);
         %endif
 
         errStatus = rtmGetErrorStatus(%<modelName>_M);
